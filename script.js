@@ -148,53 +148,84 @@ class Particle {
 }
 
 // --- Text Sampling Function ---
-function getTextPoints(text, fontSize) {
+// --- Text Sampling Function (处理多行 - 修正版) ---
+function getTextPoints(textWithNewlines, fontSize) {
     const points = [];
     const density = config.textSamplingDensity;
+    const lines = textWithNewlines.split('\n'); // 按换行符分割成多行
 
-    // Create a temporary canvas
+    if (lines.length === 0 || textWithNewlines.trim() === '') {
+        console.warn("[getTextPoints] 输入文本为空或无效。");
+        return []; // 返回空数组
+    }
+
+    // 创建临时画布
     const tempCanvas = document.createElement('canvas');
     const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
 
-    // Set font properties
+    // 设置字体属性
     const font = `${config.fontStyle} ${fontSize}px ${config.fontName}`;
     tempCtx.font = font;
 
-    // Measure text
-    const textMetrics = tempCtx.measureText(text);
-    const textWidth = Math.ceil(textMetrics.width);
-    // Estimate height (more complex than Java FontMetrics)
-    const actualHeight = (textMetrics.actualBoundingBoxAscent || fontSize) + (textMetrics.actualBoundingBoxDescent || fontSize * 0.3);
-    const textHeight = Math.ceil(actualHeight * 1.2); // Add some buffer
+    // --- 计算尺寸 ---
+    // 估算单行高度和行距
+    // 使用 'M' 或 '字' 这类字符来估算高度通常比直接用 fontSize 更可靠些
+    const metrics = tempCtx.measureText("字");
+    const approxLineHeight = (metrics.actualBoundingBoxAscent || fontSize) + (metrics.actualBoundingBoxDescent || fontSize * 0.3);
+    const leading = approxLineHeight * (config.lineSpacingFactor || 0.3); // 使用行间距因子，如果未定义则默认0.3
+    const totalLineHeight = approxLineHeight + leading; // 单行总占高（含行距）
 
-    if (textWidth <= 0 || textHeight <= 0) {
-        console.error("ERROR: Font metrics returned invalid size for '" + text + "'. Cannot sample text points.");
-        return null; // Return null like Java version
+    // 找到最长行的宽度
+    let maxWidth = 0;
+    lines.forEach(line => {
+        // 确保测量时不会因空行导致宽度为0
+        maxWidth = Math.max(maxWidth, tempCtx.measureText(line || " ").width);
+    });
+
+    // 计算文本块总高度
+    const totalBlockHeight = lines.length * approxLineHeight + Math.max(0, lines.length - 1) * leading;
+
+    if (maxWidth <= 0 || totalBlockHeight <= 0) {
+        console.error("[getTextPoints] 错误：计算的文本尺寸无效。");
+        return null;
     }
 
-    // Size the temporary canvas
-    const padding = 10; // Similar padding
-    tempCanvas.width = textWidth + padding * 2;
-    tempCanvas.height = textHeight + padding * 2;
+    // --- 设置临时画布尺寸 (加上内边距) ---
+    // 内边距可以基于字体大小，确保足够空间
+    const padding = Math.max(15, fontSize * 0.15);
+    tempCanvas.width = Math.ceil(maxWidth) + padding * 2;
+    tempCanvas.height = Math.ceil(totalBlockHeight) + padding * 2;
+    console.log(`[getTextPoints修正版] 临时画布尺寸: ${tempCanvas.width}x${tempCanvas.height}`);
 
-    // Redraw text on correctly sized canvas for sampling
-    tempCtx.font = font; // Reset font on resized canvas
+
+    // --- 在临时画布上绘制多行文本 ---
+    tempCtx.font = font; // 重设字体
     tempCtx.fillStyle = config.textSampleColor;
-    tempCtx.textBaseline = 'middle'; // Use middle for better vertical centering
-    const drawX = padding;
-    const drawY = tempCanvas.height / 2; // Center vertically
-    tempCtx.fillText(text, drawX, drawY);
+    tempCtx.textBaseline = 'middle'; // 垂直居中对齐
 
-    // Calculate offset to center points on main canvas
+    // 计算第一行的起始 Y 坐标 (考虑内边距和基线), 目标是让文本块顶部从内边距开始
+    const startY = padding + approxLineHeight / 2;
+    console.log(`[getTextPoints修正版] 绘制起始 Y: ${startY.toFixed(1)}`);
+
+    lines.forEach((line, index) => {
+        const lineWidth = tempCtx.measureText(line).width;
+        // ***修正点***：计算 drawX 使当前行在画布内水平居中
+        const drawX = (tempCanvas.width - lineWidth) / 2;
+        // 计算当前行的 Y 坐标
+        const drawY = startY + index * totalLineHeight;
+        console.log(`[getTextPoints修正版] 绘制行 ${index}: "${line}" at (${drawX.toFixed(1)}, ${drawY.toFixed(1)})`);
+        tempCtx.fillText(line, drawX, drawY);
+    });
+
+    // --- 计算偏移量，使整个文本块在主画布居中 ---
     const offsetX = centerX - tempCanvas.width / 2;
     const offsetY = centerY - tempCanvas.height / 2;
 
-    // Sample pixels
+    // --- 采样像素点 ---
     try {
         const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height).data;
         for (let y = 0; y < tempCanvas.height; y += density) {
             for (let x = 0; x < tempCanvas.width; x += density) {
-                // Get alpha channel value (index 3)
                 const alphaIndex = (y * tempCanvas.width + x) * 4 + 3;
                 if (imageData[alphaIndex] > config.textAlphaThreshold) {
                     points.push({ x: x + offsetX, y: y + offsetY });
@@ -202,12 +233,17 @@ function getTextPoints(text, fontSize) {
             }
         }
     } catch (error) {
-        console.error("Error getting image data (potential CORS issue if using external images/fonts?):", error);
-        return null; // Return null on error
+        console.error("[getTextPoints修正版] 获取图像数据时出错:", error);
+        return null;
     }
 
+    if (points.length === 0 && textWithNewlines.trim().length > 0) {
+         console.warn("[getTextPoints修正版] 警告：采样到的点数为 0，请检查字体、阈值或绘制逻辑。");
+         // 可以在这里添加显示临时画布的调试代码（参考之前的回答）
+    } else {
+        console.log(`[getTextPoints修正版] 为 "${textWithNewlines.replace('\n', '\\n')}" 采样了 ${points.length} 个目标点。`);
+    }
 
-    console.log(`Sampled ${points.length} target points for "${text}".`);
     return points;
 }
 
@@ -228,33 +264,57 @@ function resetParticles() {
 }
 
 // --- Update Text Target and Reset ---
+// --- Update Text Target and Reset (包含自动换行处理) ---
 function updateTextTarget() {
-    let text = textInput.value || config.targetText; // Get input or default
+    let rawText = textInput.value || config.targetText; // 获取原始输入或默认文本
 
-    if (!text || text.trim() === "") {
-        text = config.targetText; // Use default if input is empty/whitespace only
-        textInput.value = text; // Update input field to show default
-        console.log("Input empty, using default text:", text);
+    if (!rawText || rawText.trim() === "") {
+        rawText = config.targetText;
+        textInput.value = rawText; // 如果为空则显示默认文本
+        console.log("输入为空，使用默认文本:", rawText);
     }
 
-    // --- Optional: Dynamic Font Size Adjustment ---
-    let dynamicFontSize = config.fontSize;
-    if (text.length > 10) {
-        dynamicFontSize = Math.max(60, config.fontSize - (text.length - 10) * 8); // Decrease size for long text
-    } else if (text.length < 4) {
-        dynamicFontSize = Math.min(200, config.fontSize + (4 - text.length) * 15); // Increase size for short text
-    }
-    console.log(`Using text: "${text}", Font size: ${dynamicFontSize}`);
-    // --- End Dynamic Font Size ---
+    // --- 新增：自动换行处理 ---
+    let processedText = ''; // 用于存储处理后的文本
+    const maxChars = 6;     // 设置每行最大字符数 (这里是 6)
 
-    // Get new points
-    const newPoints = getTextPoints(text, dynamicFontSize);
-    if (newPoints) { // Only update if sampling was successful
+    // 检查是否有需要处理的文本，并且 maxChars > 0
+    if (maxChars > 0 && rawText.length > 0) {
+        for (let i = 0; i < rawText.length; i += maxChars) {
+            // 截取当前行的子字符串 (从 i 到 i + maxChars)
+            // Math.min 确保不会超出字符串末尾
+            processedText += rawText.substring(i, Math.min(i + maxChars, rawText.length));
+
+            // 如果这不是最后一段文字 (即后面还有字符)，则添加换行符
+            if (i + maxChars < rawText.length) {
+                processedText += '\n'; // 添加换行符
+            }
+        }
+    } else {
+        // 如果不进行换行处理 (maxChars <= 0 或 文本为空)，则直接使用原始文本
+        processedText = rawText;
+    }
+    console.log(`[updateTextTarget] 处理后文本: "${processedText.replace('\n', '\\n')}"`); // 调试信息
+    // --- 自动换行处理结束 ---
+
+
+    // --- （可选）动态字体大小调整 ---
+    let dynamicFontSize = config.fontSize; // 使用 config 中的字体大小
+    // 你可以根据 processedText 的行数来调整字体大小，如果需要的话
+    const numLines = processedText.split('\n').length;
+    console.log(`[updateTextTarget] 行数: ${numLines}, 字体大小: ${dynamicFontSize}`);
+    // --- 动态字体大小结束 ---
+
+
+    // 获取新的目标点 (注意：现在传递的是 processedText)
+    const newPoints = getTextPoints(processedText, dynamicFontSize);
+
+    if (newPoints && newPoints.length > 0) { // 确保 newPoints 有效且包含点
         targetPoints = newPoints;
         resetParticles();
     } else {
-        console.error("Failed to get text points. Keeping previous particles.");
-        // Optionally clear particles or show an error message
+        console.error("[updateTextTarget] 获取文本点失败或没有点被采样。");
+        // 考虑是否在此处清空粒子
         // particles = [];
         // targetPoints = [];
     }
