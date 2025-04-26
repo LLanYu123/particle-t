@@ -1,0 +1,66 @@
+/* style.css */
+
+body {
+    margin: 0;
+    overflow: hidden; /* Prevent scrollbars */
+    background-color: #000; /* Black background */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh; /* Full viewport height */
+    font-family: sans-serif; /* Basic font for controls */
+}
+
+canvas {
+    display: block; /* Prevent extra space below canvas */
+}
+
+#controls {
+    position: absolute; /* Position controls over the canvas */
+    top: 20px; /* Distance from top */
+    left: 50%; /* Center horizontally */
+    transform: translateX(-50%); /* Fine-tune centering */
+    background-color: rgba(50, 50, 50, 0.7); /* Semi-transparent dark background */
+    padding: 15px;
+    border-radius: 8px;
+    display: flex; /* Arrange label, input, button horizontally */
+    gap: 10px; /* Space between elements */
+    align-items: center; /* Align items vertically */
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3); /* Subtle shadow */
+    z-index: 10; /* Ensure controls are above the canvas */
+}
+
+#controls label {
+    color: #eee; /* Light text color for label */
+    margin-right: 5px;
+    white-space: nowrap; /* Prevent label from wrapping */
+}
+
+#textInput {
+    padding: 8px 12px;
+    border: 1px solid #666;
+    border-radius: 4px;
+    background-color: #f0f0f0; /* Light background for input */
+    color: #333; /* Dark text color for input */
+    min-width: 200px; /* Give the input some width */
+    font-size: 1rem; /* Consistent font size */
+}
+
+#updateButton {
+    padding: 8px 15px;
+    border: none;
+    border-radius: 4px;
+    background-color: #4CAF50; /* Green button */
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.2s; /* Smooth hover effect */
+    font-size: 1rem; /* Consistent font size */
+}
+
+#updateButton:hover {
+    background-color: #45a049; /* Darker green on hover */
+}
+
+#updateButton:active {
+    background-color: #3e8e41; /* Even darker green when clicked */
+}
